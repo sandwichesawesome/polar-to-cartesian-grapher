@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>극좌표 그래퍼 — 수동 직교좌표 변환 · Polar→Cartesian Plotter</title>
+  <meta name="description" content="극좌표 방정식 r = f(θ)를 입력하면 수동 알고리즘으로 직교좌표계 곡선을 시각화하고 변환 과정을 단계별로 보여줍니다." />
+
+  <!-- KaTeX: 수식(LaTeX) 렌더링 전용. 좌표 변환 계산에는 사용하지 않으며, 오직 변환 과정의 '표시'에만 쓰입니다. -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+" crossorigin="anonymous" />
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script>
+
+  <!-- 기술/데이터 도구에 어울리는 모노 + 산세리프 조합 -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="brand">
+      <div>
+        <h1>극좌표 -> 직교좌표</h1>
+      </div>
+    </div>
+    <button class="theme-toggle" data-theme-toggle aria-label="다크 모드로 전환" type="button"></button>
+  </header>
+
+  <main class="layout">
+    <!-- ============ 좌측: 입력 폼 + 변환 과정 ============ -->
+    <section class="panel control-panel" aria-labelledby="form-title">
+      <h2 id="form-title">방정식 입력</h2>
+
+      <form id="polar-form" autocomplete="off" novalidate>
+        <label class="field">
+          <span class="field-label">극좌표 방정식 <span class="mono">r = f(θ)</span></span>
+          <div class="input-row">
+            <span class="input-prefix mono">r =</span>
+            <!-- 입력 방식은 폼만 사용. maxlength로 과도한 입력 차단(보안/성능) -->
+            <input
+              id="equation-input"
+              name="equation"
+              type="text"
+              class="mono"
+              placeholder="2*sin(theta)"
+              maxlength="120"
+              spellcheck="false"
+              aria-describedby="input-help"
+            />
+          </div>
+          <small id="input-help" class="help">
+            사용 가능: <span class="mono">t = theta(θ), sin, cos, tan, sqrt, abs, exp, log, π(pi), e</span> · 연산자 <span class="mono">+ - * / ^</span>
+          </small>
+        </label>
+
+        <div class="examples" role="group" aria-label="예시 방정식">
+          <span class="examples-label">예시</span>
+          <button type="button" class="chip mono" data-eq="2*sin(theta)">2 sin θ</button>
+          <button type="button" class="chip mono" data-eq="1 + cos(theta)">1 + cos θ</button>
+          <button type="button" class="chip mono" data-eq="2 + 3*cos(theta)">2 + 3 cos θ</button>
+          <button type="button" class="chip mono" data-eq="4*cos(2*theta)">4 cos 2θ (장미)</button>
+          <button type="button" class="chip mono" data-eq="theta">θ (나선)</button>
+          <button type="button" class="chip mono" data-eq="3">3 (원)</button>
+        </div>
+
+        <div class="domain-row">
+          <label class="field-inline">
+            <span>θ 시작 (×π)</span>
+            <input id="theta-start" type="number" class="mono" value="0" step="0.25" min="-8" max="8" />
+          </label>
+          <label class="field-inline">
+            <span>θ 끝 (×π): <span id="theta-end-val" class="mono">2</span></span>
+            <input id="theta-end" type="range" class="mono" value="2" step="0.25" min="0" max="8" />
+          </label>
+        </div>
+
+        <button type="submit" class="btn-primary">곡선 그리기</button>
+      </form>
+
+      <!-- 오류 메시지 영역 (잘못된 입력 시 노출) -->
+      <div id="error-box" class="error-box" role="alert" hidden></div>
+
+      <!-- 변환 과정 표시 영역 -->
+      <div id="steps" class="steps" hidden>
+        <h3>변환 과정</h3>
+        <ol id="steps-list" class="steps-list"></ol>
+        <div class="note">
+          <strong>변환 공식</strong>: 모든 점은 직접
+          <span class="mono">x = r·cos θ</span>, <span class="mono">y = r·sin θ</span>
+          를 적용해 손으로 계산하듯 생성합니다. (자동 변환 라이브러리 미사용)
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 우측: 그래프 ============ -->
+    <section class="panel plot-panel" aria-labelledby="plot-title">
+      <div class="plot-header">
+        <h2 id="plot-title">직교좌표 그래프</h2>
+        <div class="plot-meta" id="plot-meta"></div>
+      </div>
+      <!-- 직접 그리는 Canvas. devicePixelRatio 대응은 app.js에서 처리 -->
+      <div class="canvas-wrap">
+        <canvas id="plot" width="640" height="640" role="img" aria-label="극좌표 방정식의 직교좌표 그래프"></canvas>
+      </div>
+      <p class="caption mono" id="point-readout">곡선 위 좌표 — 캔버스에 마우스를 올려보세요</p>
+    </section>
+  </main>
+
+
+
+  <script src="app.js"></script>
+</body>
+</html>
